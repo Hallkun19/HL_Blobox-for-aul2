@@ -84,6 +84,8 @@ pub enum StrokePosition {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FilterConfigSelectItems)]
 pub enum CornerMode {
+    #[item(name = "なし")]
+    None,
     #[item(name = "角のみ")]
     CornerOnly,
     #[item(name = "横括弧")]
@@ -318,7 +320,7 @@ pub struct FilterConfig {
         stroke_dotted_ratio: f64,
         #[track(name = "ストローク点線オフセット", range = 0.0..=360.0, default = 0.0, step = 1.0)]
         stroke_dotted_offset: f64,
-        #[select(name = "角の種類", items = CornerMode, default = CornerMode::CornerOnly)]
+        #[select(name = "角の種類", items = CornerMode, default = CornerMode::None)]
         stroke_corner_mode: CornerMode,
         #[track(name = "角長さ", range = 0.0..=100.0, default = 10.0, step = 1.0)]
         stroke_corner_length: f64,
@@ -1069,6 +1071,7 @@ mod tests {
         ] {
             cfg.box_shape = shape;
             for mode in [
+                CornerMode::None,
                 CornerMode::CornerOnly,
                 CornerMode::HorizontalBracket,
                 CornerMode::VerticalBracket,

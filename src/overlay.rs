@@ -419,6 +419,69 @@ fn stroke_rect(dst: &mut [RgbaPixel], w: usize, h: usize, g: &Geom, cfg: &Filter
     let color = color_of(cfg.stroke_color.to_rgb(), cfg.stroke_opacity);
     let (x0, y0, x1, y1) = (g.min_x, g.min_y, g.max_x, g.max_y);
     let r = g.corner_r;
+    let half = th * 0.5;
+    let off = match cfg.stroke_position {
+        StrokePosition::Inside => half,
+        StrokePosition::Outside => -half,
+        StrokePosition::Center => 0.0,
+    };
+
+    // 角の種類が「なし」: 全周のストローク (従来の「角のみ」チェックボックスOFF時と同じ)
+    if corner_mode == CornerMode::None {
+        if !dotted {
+            // マイターリング: 外側角丸矩形 - 内側角丸矩形
+            let (outer_k, inner_k) = match cfg.stroke_position {
+                StrokePosition::Inside => (0.0, th),
+                StrokePosition::Outside => (th, 0.0),
+                StrokePosition::Center => (th * 0.5, th * 0.5),
+            };
+            let ox0 = x0 - outer_k;
+            let oy0 = y0 - outer_k;
+            let ox1 = x1 + outer_k;
+            let oy1 = y1 + outer_k;
+            let ix0 = x0 + inner_k;
+            let iy0 = y0 + inner_k;
+            let ix1 = x1 - inner_k;
+            let iy1 = y1 - inner_k;
+            let or_ = (r - outer_k).max(0.0);
+            let ir_ = (r - inner_k).max(0.0);
+            let xa = (ox0.floor() as i32).max(0);
+            let xb = (ox1.ceil() as i32).min(w as i32 - 1);
+            let ya = (oy0.floor() as i32).max(0);
+            let yb = (oy1.ceil() as i32).min(h as i32 - 1);
+            let inner_valid = ix0 <= ix1 && iy0 <= iy1;
+            let in_ring = |x: f64, y: f64| -> bool {
+                if !rounded_rect_contains(x, y, ox0, oy0, ox1, oy1, or_) {
+                    return false;
+                }
+                if !inner_valid {
+                    return true;
+                }
+                !rounded_rect_contains(x, y, ix0, iy0, ix1, iy1, ir_)
+            };
+            for y in ya..=yb {
+                for x in xa..=xb {
+                    let cov = ss2x2(x as f64, y as f64, &in_ring);
+                    if cov > 0.0 {
+                        blend_pixel_cov(&mut dst[(y as usize) * w + x as usize], color, cov);
+                    }
+                }
+            }
+            return;
+        }
+        // 点線: 連続する角丸矩形の輪郭に沿って破線
+        let period = (cfg.stroke_dotted_freq as f64).max(1.0);
+        let on = period * (cfg.stroke_dotted_ratio / 100.0);
+        let mut phase = (cfg.stroke_dotted_offset / 360.0) * period;
+        let cr = (r - off).max(0.0);
+        let cx0 = x0 + off;
+        let cy0 = y0 + off;
+        let cx1 = x1 - off;
+        let cy1 = y1 - off;
+        let outline = build_rounded_rect_outline(cx0, cy0, cx1, cy1, cr, 8);
+        draw_dashed_polyline(dst, w, h, &outline, th, color, period, on, &mut phase, aa);
+        return;
+    }
 
     // 表示する角 (0=右上, 1=右下, 2=左下, 3=左上)
     let corners: [bool; 4] = match corner_mode {
@@ -429,6 +492,7 @@ fn stroke_rect(dst: &mut [RgbaPixel], w: usize, h: usize, g: &Geom, cfg: &Filter
         CornerMode::BracketLeft => [false, true, false, true],
         // 鍵括弧(右): 右上と左下
         CornerMode::BracketRight => [true, false, true, false],
+        CornerMode::None => unreachable!("角の種類「なし」はここには到達しない"),
     };
 
     let period = if dotted {
@@ -442,12 +506,6 @@ fn stroke_rect(dst: &mut [RgbaPixel], w: usize, h: usize, g: &Geom, cfg: &Filter
         0.0
     };
     let corner_len = (cfg.stroke_corner_length as f64).max(0.0);
-    let half = th * 0.5;
-    let off = match cfg.stroke_position {
-        StrokePosition::Inside => half,
-        StrokePosition::Outside => -half,
-        StrokePosition::Center => 0.0,
-    };
     let mut phase = if period > 0.0 {
         (cfg.stroke_dotted_offset / 360.0) * period
     } else {
@@ -654,16 +712,96 @@ fn stroke_ellipse(dst: &mut [RgbaPixel], w: usize, h: usize, g: &Geom, cfg: &Fil
     if a <= 0.5 || b <= 0.5 {
         return;
     }
-    // ストローク位置 (内側/中央/外側) に応じた中心線の半径。
+    let color = color_of(cfg.stroke_color.to_rgb(), cfg.stroke_opacity);
+    let aa = true;
+    let dotted = cfg.stroke_dotted;
+    let corner_mode = cfg.stroke_corner_mode;
+
+    // 角の種類が「なし」: 全周のリング (従来の「角のみ」チェックボックスOFF時と同じ)
+    if corner_mode == CornerMode::None {
+        let (mut ao, mut bo, mut ai, mut bi) = (a, b, a, b);
+        match cfg.stroke_position {
+            StrokePosition::Inside => {
+                ai = (a - th).max(0.0);
+                bi = (b - th).max(0.0);
+            }
+            StrokePosition::Outside => {
+                ao = a + th;
+                bo = b + th;
+            }
+            StrokePosition::Center => {
+                ao = a + th * 0.5;
+                bo = b + th * 0.5;
+                ai = (a - th * 0.5).max(0.0);
+                bi = (b - th * 0.5).max(0.0);
+            }
+        }
+        if !dotted {
+            // 解析的なリング (外側楕円 - 内側楕円)
+            let min_x = g.cx - ao;
+            let max_x = g.cx + ao;
+            let min_y = g.cy - bo;
+            let max_y = g.cy + bo;
+            let x0 = (min_x.floor() as i32).max(0);
+            let x1 = (max_x.ceil() as i32).min(w as i32 - 1);
+            let y0 = (min_y.floor() as i32).max(0);
+            let y1 = (max_y.ceil() as i32).min(h as i32 - 1);
+            let in_ring = |x: f64, y: f64| -> bool {
+                let dx = (x - g.cx) / ao;
+                let dy = (y - g.cy) / bo;
+                let outer = dx * dx + dy * dy <= 1.0;
+                if ai <= 0.0 || bi <= 0.0 {
+                    return outer;
+                }
+                let ix = (x - g.cx) / ai;
+                let iy = (y - g.cy) / bi;
+                outer && (ix * ix + iy * iy > 1.0)
+            };
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    let cov = ss2x2(x as f64, y as f64, &in_ring);
+                    if cov > 0.0 {
+                        blend_pixel_cov(&mut dst[(y as usize) * w + x as usize], color, cov);
+                    }
+                }
+            }
+            return;
+        }
+        // 点線リング
+        let period = (cfg.stroke_dotted_freq as f64).max(1.0);
+        let on = period * (cfg.stroke_dotted_ratio / 100.0);
+        let ra = (ao + ai) * 0.5;
+        let rb = (bo + bi) * 0.5;
+        let phase = (cfg.stroke_dotted_offset / 360.0) * period;
+        let mut arc = 0.0;
+        let mut prev = (g.cx + ra, g.cy);
+        let step: f64 = 0.02;
+        let mut ang: f64 = 0.0;
+        while ang <= 6.28318530718 + step {
+            let x = g.cx + ra * ang.cos();
+            let y = g.cy + rb * ang.sin();
+            let d = ((x - prev.0).powi(2) + (y - prev.1).powi(2)).sqrt();
+            arc += d;
+            let mut f = (phase + arc) % period;
+            if f < 0.0 {
+                f += period;
+            }
+            if f < on {
+                stamp_disc(dst, w, h, x, y, th * 0.5, color, aa);
+            }
+            prev = (x, y);
+            ang += step;
+        }
+        return;
+    }
+
+    // 角モード: ストローク位置 (内側/中央/外側) に応じた中心線の半径。
     // 角の描画はこの中心線上で行う。
     let (ao, bo) = match cfg.stroke_position {
         StrokePosition::Inside => ((a - th * 0.5).max(0.0), (b - th * 0.5).max(0.0)),
         StrokePosition::Outside => (a + th * 0.5, b + th * 0.5),
         StrokePosition::Center => (a, b),
     };
-    let color = color_of(cfg.stroke_color.to_rgb(), cfg.stroke_opacity);
-    let aa = true;
-    let dotted = cfg.stroke_dotted;
     let period = if dotted {
         (cfg.stroke_dotted_freq as f64).max(1.0)
     } else {
@@ -674,8 +812,6 @@ fn stroke_ellipse(dst: &mut [RgbaPixel], w: usize, h: usize, g: &Geom, cfg: &Fil
     } else {
         0.0
     };
-
-    let corner_mode = cfg.stroke_corner_mode;
     // 表示する角 (0=右上, 1=右下, 2=左下, 3=左上)
     let corners: [bool; 4] = match corner_mode {
         CornerMode::CornerOnly
@@ -683,6 +819,7 @@ fn stroke_ellipse(dst: &mut [RgbaPixel], w: usize, h: usize, g: &Geom, cfg: &Fil
         | CornerMode::VerticalBracket => [true, true, true, true],
         CornerMode::BracketLeft => [false, true, false, true],
         CornerMode::BracketRight => [true, false, true, false],
+        CornerMode::None => unreachable!("角の種類「なし」はここには到達しない"),
     };
 
     let pi = std::f64::consts::PI;
@@ -760,6 +897,7 @@ fn stroke_ellipse(dst: &mut [RgbaPixel], w: usize, h: usize, g: &Geom, cfg: &Fil
                 draw_arc_range(a0, a0 + extent);
             }
         }
+        CornerMode::None => unreachable!("角の種類「なし」はここには到達しない"),
     }
     return;
 }
@@ -1331,6 +1469,52 @@ fn draw_arrow_at(
     let b1 = (cx - uxa * back + pxa * half, cy - uya * back + pya * half);
     let b2 = (cx - uxa * back - pxa * half, cy - uya * back - pya * half);
     fill_triangle(dst, w, h, tip.0, tip.1, b1.0, b1.1, b2.0, b2.1, color, true);
+}
+
+/// 角丸矩形の輪郭点列 (閉じた) を生成する。
+fn build_rounded_rect_outline(
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+    r: f64,
+    arc_segs: usize,
+) -> Vec<Pt> {
+    let pi = std::f64::consts::PI;
+    let mut out = Vec::new();
+    let half = (x1 - x0).min(y1 - y0) * 0.5;
+    let r = if r > half { half } else { r };
+    if r <= 0.0 {
+        out.push(Pt { x: x0, y: y0 });
+        out.push(Pt { x: x1, y: y0 });
+        out.push(Pt { x: x1, y: y1 });
+        out.push(Pt { x: x0, y: y1 });
+        out.push(Pt { x: x0, y: y0 });
+        return out;
+    }
+    let ax = x0 + r;
+    let ay = y0 + r;
+    let bx = x1 - r;
+    let by = y1 - r;
+    let corner = |ccx: f64, ccy: f64, a0: f64, a1: f64, out: &mut Vec<Pt>| {
+        for i in 1..=arc_segs {
+            let a = a0 + (a1 - a0) * i as f64 / arc_segs as f64;
+            out.push(Pt {
+                x: ccx + r * a.cos(),
+                y: ccy + r * a.sin(),
+            });
+        }
+    };
+    out.push(Pt { x: ax, y: y0 });
+    corner(bx, ay, -pi * 0.5, 0.0, &mut out);
+    out.push(Pt { x: x1, y: by });
+    corner(bx, by, 0.0, pi * 0.5, &mut out);
+    out.push(Pt { x: bx, y: y1 });
+    corner(ax, by, pi * 0.5, pi, &mut out);
+    out.push(Pt { x: x0, y: ay });
+    corner(ax, ay, pi, pi * 1.5, &mut out);
+    out.push(Pt { x: ax, y: y0 });
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
