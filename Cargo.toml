@@ -1,0 +1,16 @@
+[package]
+name = "hl_blobox"
+version = "1.0.0"
+edition = "2021"
+description = "HL_Blobox - AviUtl2 blob tracking & bounding box overlay plugin (Rust port of the After Effects plugin by halkun19)"
+license = "MIT"
+
+[lib]
+name = "hl_blobox_filter"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+aviutl2 = "0.43.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Controls_Dialogs"] }

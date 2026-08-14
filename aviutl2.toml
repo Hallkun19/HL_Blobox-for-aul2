@@ -1,0 +1,26 @@
+[project]
+id = "halkun19.HL_Blobox"
+name = "HL_Blobox"
+version = "1.0.0"
+
+[development]
+aviutl2_version = "latest"
+
+[release]
+output_dir = "release"
+profile = "release"
+package_id = "halkun19.HL_Blobox"
+package_name = "HL_Blobox v{version}"
+package_information = "HL_Blobox v{version} by halkun19 - AviUtl2 Blob tracker plugin"
+zip_name = "HL_Blobox-v{version}"
+
+[artifacts.hl_blobox-auf2]
+destination = "Plugin/HL_Blobox.auf2"
+
+[artifacts.hl_blobox-auf2.profiles.debug]
+build = ["cargo build"]
+source = "target/debug/hl_blobox_filter.dll"
+
+[artifacts.hl_blobox-auf2.profiles.release]
+build = ["cargo build --release"]
+source = "target/release/hl_blobox_filter.dll"

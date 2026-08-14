@@ -1,0 +1,11 @@
+# AviUtl2 CLI
+/.aviutl2-cli
+/release
+
+# Rust
+/target
+
+# Other
+how_to_make_aul2_plugin.md
+マスター指示.txt
+DEVELOPING.md
