@@ -449,6 +449,8 @@ pub struct FilterConfig {
             default = "X:$[box_x_position],Y:$[box_y_position]"
         )]
         text_content: String,
+        #[color(name = "テキスト色", default = 0xffffff)]
+        text_color: FilterConfigColorValue,
         #[select(name = "テキスト表示基準", items = TextReference, default = TextReference::Box)]
         text_reference: TextReference,
         #[select(name = "テキスト水平揃え", items = AlignH, default = AlignH::Center)]

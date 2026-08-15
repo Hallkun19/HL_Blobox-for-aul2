@@ -1,6 +1,6 @@
 [package]
 name = "hl_blobox"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 description = "HL_Blobox - AviUtl2 blob tracking & bounding box overlay plugin (Rust port of the After Effects plugin by halkun19)"
 license = "MIT"

@@ -285,11 +285,12 @@ pub fn draw_text_overlay(
                 if cov <= 0.01 {
                     continue;
                 }
+                let (tr, tg, tb) = cfg.text_color.to_rgb();
                 let px = &mut dst[(y as usize) * w + x as usize];
                 let ia = 1.0 - cov;
-                px.r = (px.r as f32 * ia + cov * 255.0) as u8;
-                px.g = (px.g as f32 * ia + cov * 255.0) as u8;
-                px.b = (px.b as f32 * ia + cov * 255.0) as u8;
+                px.r = (px.r as f32 * ia + cov * tr as f32) as u8;
+                px.g = (px.g as f32 * ia + cov * tg as f32) as u8;
+                px.b = (px.b as f32 * ia + cov * tb as f32) as u8;
                 px.a = (px.a as f32 * ia + cov * 255.0) as u8;
             }
         }
