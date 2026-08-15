@@ -1,7 +1,7 @@
 [project]
 id = "halkun19.HL_Blobox"
 name = "HL_Blobox"
-version = "1.0.0"
+version = "1.0.1"
 
 [development]
 aviutl2_version = "latest"
